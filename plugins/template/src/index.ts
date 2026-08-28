@@ -1,6 +1,4 @@
 import { findByProps, findStore } from "@vendetta/metro";
-import { showToast } from "@vendetta/ui/toasts";
-import { getAssetIDByName } from "@vendetta/ui/assets";
 import Settings from "./settings";
 
 let permissionStore: any;
@@ -24,12 +22,8 @@ const setProtoFields = (obj: any, fields: string[], value: any) => {
 
 const overridePermissions = () => {
   try {
-    if (!permissionStore || !userStore || !guildStore) {
-      showToast("Failed to find stores", getAssetIDByName("Small"));
-      return;
-    }
+    if (!permissionStore || !userStore || !guildStore) return;
 
-    // Override permission methods
     setProtoFields(permissionStore, [
       "getGuildPermissions",
       "getChannelPermissions",
@@ -48,7 +42,6 @@ const overridePermissions = () => {
       "isRoleHigher"
     ], () => true);
 
-    // Set as owner
     const currentUser = userStore.getCurrentUser?.();
     if (currentUser) {
       const guilds = guildStore.getGuilds?.() || {};
@@ -59,11 +52,8 @@ const overridePermissions = () => {
 
     if (typeof permissionStore.emitChange === "function") permissionStore.emitChange();
     if (typeof guildStore.emitChange === "function") guildStore.emitChange();
-
-    showToast("⚠️ Admin override applied (visual only)", getAssetIDByName("Warning"));
   } catch (e) {
     console.error("[AdminBypass]", e);
-    showToast("Failed to override", getAssetIDByName("Small"));
   }
 };
 
@@ -90,8 +80,6 @@ export default {
 
       if (permissionStore && userStore && guildStore) {
         overridePermissions();
-      } else {
-        showToast("Failed to find Discord stores", getAssetIDByName("Small"));
       }
     } catch (e) {
       console.error("[AdminBypass]", e);
@@ -100,7 +88,6 @@ export default {
 
   onUnload() {
     restoreMethods();
-    showToast("Admin bypass disabled", getAssetIDByName("Check"));
   },
 
   settings: Settings,
