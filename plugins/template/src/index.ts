@@ -1,79 +1,107 @@
-(() => {
-  // 1. Adım: Kullanılabilir en kararlı Metro bulucuyu tespit et
-  let metro = null;
-  try {
-    metro = (typeof vendetta !== 'undefined' ? vendetta.metro : null) || 
-            (typeof revenge !== 'undefined' ? revenge.metro : null) || 
-            (typeof global !== 'undefined' ? global.vendetta?.metro : null);
-  } catch(e) {}
+import { findByProps, findStore } from "@vendetta/metro";
+import { showToast } from "@vendetta/ui/toasts";
+import { getAssetIDByName } from "@vendetta/ui/assets";
+import Settings from "./settings";
 
-  // 2. Adım: Eğer üstteki global nesneler kısıtlanmışsa, React Native'in kendi dahili require yapısını tara
-  if (!metro) {
+let permissionStore: any;
+let userStore: any;
+let guildStore: any;
+let originalMethods: Map<string, Function> = new Map();
+
+const setProtoFields = (obj: any, fields: string[], value: any) => {
+  fields.forEach(field => {
     try {
-      const modules = window.__r?.() || global.__r?.() || {};
-      const metroKey = Object.keys(modules).find(k => modules[k]?.exports?.findByProps);
-      if (metroKey) metro = modules[metroKey].exports;
+      if (obj && obj[field] !== undefined) {
+        const key = `${obj.constructor?.name || 'obj'}.${field}`;
+        if (!originalMethods.has(key)) {
+          originalMethods.set(key, obj[field]);
+        }
+        Object.getPrototypeOf(obj)[field] = value;
+      }
+    } catch(e) {}
+  });
+};
+
+const overridePermissions = () => {
+  try {
+    if (!permissionStore || !userStore || !guildStore) {
+      showToast("Failed to find stores", getAssetIDByName("Small"));
+      return;
+    }
+
+    // Override permission methods
+    setProtoFields(permissionStore, [
+      "getGuildPermissions",
+      "getChannelPermissions",
+      "computePermissions",
+      "computeBasicPermissions"
+    ], () => 0n);
+
+    setProtoFields(permissionStore, [
+      "can",
+      "canAccessGuildSettings",
+      "canAccessMemberSafetyPage",
+      "canBasicChannel",
+      "canImpersonateRole",
+      "canManageUser",
+      "canWithPartialContext",
+      "isRoleHigher"
+    ], () => true);
+
+    // Set as owner
+    const currentUser = userStore.getCurrentUser?.();
+    if (currentUser) {
+      const guilds = guildStore.getGuilds?.() || {};
+      Object.values(guilds).forEach((g: any) => {
+        if (g) g.ownerId = currentUser.id;
+      });
+    }
+
+    if (typeof permissionStore.emitChange === "function") permissionStore.emitChange();
+    if (typeof guildStore.emitChange === "function") guildStore.emitChange();
+
+    showToast("⚠️ Admin override applied (visual only)", getAssetIDByName("Warning"));
+  } catch (e) {
+    console.error("[AdminBypass]", e);
+    showToast("Failed to override", getAssetIDByName("Small"));
+  }
+};
+
+const restoreMethods = () => {
+  for (const [key, value] of originalMethods) {
+    try {
+      const parts = key.split('.');
+      const methodName = parts[parts.length - 1];
+      const store = permissionStore || guildStore;
+      if (store && store[methodName]) {
+        Object.getPrototypeOf(store)[methodName] = value;
+      }
     } catch(e) {}
   }
+  originalMethods.clear();
+};
 
-  // 3. Adım: Modülleri ayırt etme fonksiyonu
-  const findModuleByProps = (...props) => {
-    if (!metro) return null;
+export default {
+  onLoad() {
     try {
-      if (typeof metro.findByProps === "function") return metro.findByProps(...props);
-      if (typeof metro.find === "function") return metro.find(m => props.every(p => p in (m?.exports || m)));
-    } catch (e) {}
-    return null;
-  };
+      permissionStore = findStore("PermissionStore") || findByProps("getGuildPermissionProps");
+      userStore = findStore("UserStore") || findByProps("getCurrentUser");
+      guildStore = findStore("GuildStore") || findByProps("getGuilds");
 
-  // Eğer metro hiçbir şekilde bulunamazsa, eval'in yerel kapsamındaki nesneleri dökümle
-  if (!metro) {
-    return "Hata: Metro modül motoruna erişilemedi. İstemci kısıtlaması var.";
-  }
-
-  const PermissionStore = findModuleByProps("getGuildPermissionProps", "computePermissions");
-  const UserStore = findModuleByProps("getCurrentUser", "getUser");
-  const GuildStore = findModuleByProps("getGuilds", "getGuildsArray") || findModuleByProps("getGuilds");
-
-  if (!PermissionStore || !GuildStore || !UserStore) {
-    return `Eksik bulma hatası:\nPermission: ${!!PermissionStore}\nUser: ${!!UserStore}\nGuild: ${!!GuildStore}`;
-  }
-
-  const setProtoFields = (obj, fields, value) => {
-    fields.forEach(field => {
-      try { Object.getPrototypeOf(obj)[field] = value; } catch(e) {}
-    });
-  };
-
-  let permissionProps = {};
-  try {
-    const rawProps = PermissionStore.getGuildPermissionProps({ id: "0" }) || {};
-    permissionProps = Object.fromEntries(Object.keys(rawProps).map(key => [key, true]));
-  } catch(e) {
-    permissionProps = { ADMINISTRATOR: true, ADMIN: true };
-  }
-
-  // Enjeksiyon aşaması
-  setProtoFields(PermissionStore, ["getGuildPermissions", "getChannelPermissions", "computePermissions", "computeBasicPermissions"], () => ~0n);
-  setProtoFields(PermissionStore, ["getGuildPermissionProps"], guild => ({ ...permissionProps, guild }));
-  setProtoFields(PermissionStore, ["can", "canAccessGuildSettings", "canAccessMemberSafetyPage", "canBasicChannel", "canImpersonateRole", "canManageUser", "canWithPartialContext", "isRoleHigher"], () => true);
-  
-  if (typeof PermissionStore.emitChange === "function") PermissionStore.emitChange();
-
-  try {
-    const applyOwnerOverride = () => {
-      const guildsObj = GuildStore.getGuilds?.() || {};
-      const guildsArray = GuildStore.getGuildsArray?.() || Object.values(guildsObj);
-      const currentUser = UserStore.getCurrentUser?.();
-      if (guildsArray && currentUser) {
-        guildsArray.forEach(g => { if (g) g.ownerId = currentUser.id; });
+      if (permissionStore && userStore && guildStore) {
+        overridePermissions();
+      } else {
+        showToast("Failed to find Discord stores", getAssetIDByName("Small"));
       }
-    };
-    if (typeof GuildStore.addChangeListener === "function") GuildStore.addChangeListener(applyOwnerOverride);
-    applyOwnerOverride();
-  } catch(e) {}
+    } catch (e) {
+      console.error("[AdminBypass]", e);
+    }
+  },
 
-  if (typeof GuildStore.emitChange === "function") GuildStore.emitChange();
+  onUnload() {
+    restoreMethods();
+    showToast("Admin bypass disabled", getAssetIDByName("Check"));
+  },
 
-  return "Discord sonsuz yetki başarıyla hesaba tanımlandı!";
-})();
+  settings: Settings,
+};
