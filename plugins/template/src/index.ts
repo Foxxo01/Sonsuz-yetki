@@ -1,12 +1,12 @@
 import { findByProps, findStore } from "@vendetta/metro";
 import Settings from "./settings";
 
-let permissionStore: any;
-let userStore: any;
-let guildStore: any;
-let originalMethods: Map<string, Function> = new Map();
+let permissionStore;
+let userStore;
+let guildStore;
+let originalMethods = new Map();
 
-const setProtoFields = (obj: any, fields: string[], value: any) => {
+const setProtoFields = (obj, fields, value) => {
   fields.forEach(field => {
     try {
       if (obj && obj[field] !== undefined) {
@@ -45,7 +45,7 @@ const overridePermissions = () => {
     const currentUser = userStore.getCurrentUser?.();
     if (currentUser) {
       const guilds = guildStore.getGuilds?.() || {};
-      Object.values(guilds).forEach((g: any) => {
+      Object.values(guilds).forEach((g) => {
         if (g) g.ownerId = currentUser.id;
       });
     }
@@ -85,10 +85,8 @@ export default {
       console.error("[AdminBypass]", e);
     }
   },
-
   onUnload() {
     restoreMethods();
   },
-
   settings: Settings,
 };
