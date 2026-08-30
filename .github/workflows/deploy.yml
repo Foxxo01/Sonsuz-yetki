@@ -21,6 +21,9 @@ jobs:
       - name: Install pnpm
         run: npm install --global pnpm
 
+      - name: Allow Build Scripts
+        run: pnpm config set only-built-dependencies "@swc/core,esbuild"
+
       - name: Install dependencies
         run: pnpm install
 
