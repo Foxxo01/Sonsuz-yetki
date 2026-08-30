@@ -1,4 +1,4 @@
-name: Build and Deploy
+name: Deploy plugin
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
       - master
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
@@ -24,7 +24,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      - name: Build plugin
+      - name: Build plugin(s)
         run: pnpm run build
 
       - name: Deploy to GitHub Pages
